@@ -11,6 +11,10 @@ class FinitaryPermutation:
             self.n = 0
         self.name = name
 
+    def reduced(self):
+        self.map = {k: self.map[k] for k in self.map.keys() if self.map[k] != k}
+        return self
+
     def __call__(self, x):
         try:
             xx = int(x)
@@ -35,21 +39,42 @@ class FinitaryPermutation:
     def __mul__(self, other):
         """Komposition: self * other (erst 'other', dann 'self')"""
         new_n = max(self.n, other.n)
+
+        # Der relevante Bereich sind alle Indizes, die
+        # in irgendeiner Weise von self oder other angefasst werden.
+        # (Support union Range von beiden)
+        relevant_indices = (
+            set(self.map.keys())
+            | set(self.map.values())
+            | set(other.map.keys())
+            | set(other.map.values())
+        )
+
         new_map = {}
-        # Wir müssen alle Indizes prüfen, die von mindestens einer Permutation bewegt werden
-        for i in self.map.keys() | other.map.keys():
+        for i in relevant_indices:
+            # erst other(i), dann self(target_other)
             target = self(other(i))
+
+            # Nur speichern, wenn es keine Identität ist
             if target != i:
                 new_map[i] = target
-        if self.name:
-            s_name = f"{self.name}"
-        else:
-            s_name = "?"
-        if other.name:
-            t_name = f"{other.name}"
-        else:
-            t_name = "?"
-        return FinitaryPermutation(new_map, new_n, name=f"( {s_name} o {t_name} )")
+
+        # Namenslogik
+        s_name = self.name if self.name else "?"
+        t_name = other.name if other.name else "?"
+
+        return FinitaryPermutation(new_map, new_n, name=f"({s_name} o {t_name})")
+
+    def __pow__(self, n):
+        if n == -1:
+            return ~self
+        if n == 0:
+            return self.identity()
+        if n > 0:
+            if n == 1:
+                return self
+            if n > 1:
+                return self * (self ** (int(n - 1)))
 
     def __repr__(self):
         s = sorted(self.map.keys())
@@ -133,6 +158,44 @@ class FinitaryPermutation:
         # Da wir 'rückwärts' zur Identität sortiert haben,
         # müssen wir die Sequenz umdrehen, um das Element zu bauen
         return word[::-1]
+
+    def __hash__(self) -> int:
+        return hash(tuple(self.get_canonical_word()))
+
+    def order(self) -> int:
+        if self == FinitaryPermutation.identity():
+            return 0
+        else:
+            t = self
+            i = 1
+            while t != FinitaryPermutation.identity():
+                t = t * self
+                i += 1
+            return i
+
+    def __lt__(self, other):
+        # 1. Bereinigte Maps holen
+        map_a = self.reduced().map
+        map_b = other.reduced().map
+
+        # 2. Kriterium: Länge des Supports
+        len_a = len(map_a)
+        len_b = len(map_b)
+        if len_a != len_b:
+            return len_a < len_b
+
+        # 3. Kriterium: Support sortiert vergleichen ("fängt früher an")
+        support_a = tuple(sorted(map_a.keys()))
+        support_b = tuple(sorted(map_b.keys()))
+        if support_a != support_b:
+            return support_a < support_b
+
+        # 4. Kriterium: Werte parameterweise vergleichen (basierend auf sortierten Keys!)
+        # Wir holen die Values in der exakt gleichen Reihenfolge wie die sortierten Keys
+        range_a = tuple(map_a[k] for k in support_a)
+        range_b = tuple(map_b[k] for k in support_b)
+
+        return range_a < range_b
 
     def __eq__(self, other):
         try:
@@ -239,6 +302,24 @@ class FinitaryPermutation:
         t = s[1:] + [s[0]]
         map = dict(zip(s, t))
         return cls(map, name=f"c_{n}")
+
+    @classmethod
+    def cycle_from_presentation(cls, t: tuple[int] = tuple([])):
+        if len(t) == 0:
+            return FinitaryPermutation.identity()
+        else:
+            l = list(t)
+            r = l[1:] + [l[0]]
+            m = list(zip(l, r))
+            return FinitaryPermutation(m, name="c")
+
+    @classmethod
+    def cycles_up_to(cls, n: int = 32):
+        return [cls.cycle_of_degree(k) for k in range(n)]
+
+    @classmethod
+    def transpositions_up_to(cls, n: int = 31):
+        return [cls.tau(i) for i in range(n)]
 
     @classmethod
     def test_class(cls):
@@ -425,19 +506,3 @@ class FinitaryPermutation:
 
 
 FinitaryPermutation.test_class()
-e = FinitaryPermutation.identity()
-e0 = FinitaryPermutation([(0, 0)], name="e0")
-cycles = [FinitaryPermutation.cycle_of_degree(n) for n in range(0, 32)]
-taus = [FinitaryPermutation.tau(i) for i in range(0, 32)]
-
-c2, c3, c4, c5, c6, c7 = (
-    cycles[2],
-    cycles[3],
-    cycles[4],
-    cycles[5],
-    cycles[6],
-    cycles[7],
-)
-lhs = (
-    FinitaryPermutation.dr(c4, c5, c6) + FinitaryPermutation.dr(c4, c5, c7)
-) * FinitaryPermutation.dl(c4 + c5, c6, c7)
